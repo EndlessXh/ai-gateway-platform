@@ -1,0 +1,264 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { ChevronRight } from 'lucide-react'
+import { memo, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+
+import { ModelIdentity } from '@/features/model-catalog/components/model-identity'
+import { cn } from '@/lib/utils'
+
+import { DEFAULT_TOKEN_UNIT } from '../constants'
+import {
+  getDynamicDisplayGroupRatio,
+  getDynamicPricingSummary,
+} from '../lib/dynamic-price'
+import { parseTags } from '../lib/filters'
+import { isTokenBasedModel } from '../lib/model-helpers'
+import { formatPrice, formatRequestPrice } from '../lib/price'
+import type { PricingModel, TokenUnit } from '../types'
+import { ModelBillingModeBadge } from './model-billing-mode-badge'
+import { ModelPerfBadge, type ModelPerfBadgeData } from './model-perf-badge'
+
+export interface ModelCardProps {
+  model: PricingModel
+  onClick: () => void
+  priceRate?: number
+  usdExchangeRate?: number
+  tokenUnit?: TokenUnit
+  showRechargePrice?: boolean
+  selectedGroup?: string
+  perf?: ModelPerfBadgeData
+}
+
+export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
+  const { t } = useTranslation()
+  const tokenUnit = props.tokenUnit ?? DEFAULT_TOKEN_UNIT
+  const priceRate = props.priceRate ?? 1
+  const usdExchangeRate = props.usdExchangeRate ?? 1
+  const showRechargePrice = props.showRechargePrice ?? false
+  const isTokenBased = isTokenBasedModel(props.model)
+  const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
+  const tags = parseTags(props.model.tags)
+  const groups = props.model.enable_groups || []
+  const endpoints = props.model.supported_endpoint_types || []
+  const isPricingUnavailable =
+    props.model.platform_pricing_status === 'unavailable'
+  const isDynamicPricing =
+    props.model.billing_mode === 'tiered_expr' &&
+    Boolean(props.model.billing_expr)
+  const hasCachedPrice = isTokenBased && props.model.cache_ratio != null
+  const dynamicSummary = isDynamicPricing
+    ? getDynamicPricingSummary(props.model, {
+        tokenUnit,
+        showRechargePrice,
+        priceRate,
+        usdExchangeRate,
+        groupRatioMultiplier: getDynamicDisplayGroupRatio(
+          props.model,
+          props.selectedGroup
+        ),
+      })
+    : null
+
+  const primaryGroup = groups[0]
+  const bottomTags = [...endpoints.slice(0, 2), ...tags.slice(0, 2)]
+  const hiddenCount =
+    Math.max(groups.length - 1, 0) +
+    Math.max(endpoints.length - 2, 0) +
+    Math.max(tags.length - 2, 0)
+
+  let priceSummary: ReactNode
+  if (isPricingUnavailable) {
+    priceSummary = (
+      <span className='text-warning-foreground text-sm'>
+        {t('Pricing unavailable')}
+      </span>
+    )
+  } else if (dynamicSummary) {
+    if (dynamicSummary.isSpecialExpression) {
+      priceSummary = (
+        <span className='min-w-0'>
+          <span className='text-amber-700 dark:text-amber-300'>
+            {t('Special billing expression')}
+          </span>
+          <code className='text-muted-foreground/70 mt-0.5 line-clamp-1 block font-mono text-[11px] break-all'>
+            {dynamicSummary.rawExpression}
+          </code>
+        </span>
+      )
+    } else if (dynamicSummary.primaryEntries.length > 0) {
+      priceSummary = (
+        <>
+          {dynamicSummary.primaryEntries.map((entry) => (
+            <span
+              key={entry.key}
+              className='text-muted-foreground whitespace-nowrap'
+            >
+              {t(entry.shortLabel)}{' '}
+              <span className='text-foreground font-mono font-semibold'>
+                {entry.formatted}
+              </span>
+            </span>
+          ))}
+        </>
+      )
+    } else {
+      priceSummary = (
+        <span className='text-muted-foreground text-sm'>
+          {t('Dynamic Pricing')}
+        </span>
+      )
+    }
+  } else if (isTokenBased) {
+    priceSummary = (
+      <>
+        <span className='text-muted-foreground whitespace-nowrap'>
+          {t('Input')}{' '}
+          <span className='text-foreground font-mono font-semibold'>
+            {formatPrice(
+              props.model,
+              'input',
+              tokenUnit,
+              showRechargePrice,
+              priceRate,
+              usdExchangeRate,
+              props.selectedGroup
+            )}
+          </span>
+        </span>
+        <span className='text-muted-foreground whitespace-nowrap'>
+          {t('Output')}{' '}
+          <span className='text-foreground font-mono font-semibold'>
+            {formatPrice(
+              props.model,
+              'output',
+              tokenUnit,
+              showRechargePrice,
+              priceRate,
+              usdExchangeRate,
+              props.selectedGroup
+            )}
+          </span>
+        </span>
+        {hasCachedPrice && (
+          <span className='text-muted-foreground whitespace-nowrap'>
+            {t('Cached')}{' '}
+            <span className='text-foreground font-mono font-semibold'>
+              {formatPrice(
+                props.model,
+                'cache',
+                tokenUnit,
+                showRechargePrice,
+                priceRate,
+                usdExchangeRate,
+                props.selectedGroup
+              )}
+            </span>
+          </span>
+        )}
+      </>
+    )
+  } else {
+    priceSummary = (
+      <span className='text-muted-foreground whitespace-nowrap'>
+        <span className='text-foreground font-mono font-semibold'>
+          {formatRequestPrice(
+            props.model,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            props.selectedGroup
+          )}
+        </span>{' '}
+        / {t('request')}
+      </span>
+    )
+  }
+
+  return (
+    <div
+      className={cn(
+        'group relative flex flex-col rounded-xl border p-3 transition-colors sm:p-5',
+        'hover:bg-muted/20'
+      )}
+    >
+      {/* Shared catalog identity keeps Models and Pricing metadata aligned. */}
+      <div className='flex items-start justify-between gap-2.5 sm:gap-3'>
+        <ModelIdentity
+          compact
+          model={{
+            model_name: props.model.model_name,
+            display_name: props.model.display_name,
+            provider_label: props.model.provider_label,
+            icon_key: props.model.icon_key,
+          }}
+        />
+
+        <div className='flex shrink-0 items-center gap-1.5'>
+          <button
+            type='button'
+            onClick={props.onClick}
+            className='text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors sm:px-2.5 sm:py-1.5'
+          >
+            {t('Details')}
+            <ChevronRight className='size-3.5' />
+          </button>
+        </div>
+      </div>
+
+      <div className='mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm'>
+        {priceSummary}
+      </div>
+
+      {/* Description */}
+      <p className='text-muted-foreground mt-2 line-clamp-1 flex-1 text-[13px] leading-relaxed sm:mt-4 sm:line-clamp-2 sm:min-h-[2.5rem]'>
+        {props.model.description || t('No description available.')}
+      </p>
+
+      {/* Footer: left metadata and right performance summary share row alignment */}
+      <div className='mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 sm:mt-4'>
+        <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
+          {primaryGroup && (
+            <span className='text-muted-foreground text-sm font-medium'>
+              {primaryGroup}
+            </span>
+          )}
+          <ModelBillingModeBadge model={props.model} />
+        </div>
+        <ModelPerfBadge perf={props.perf} className='row-span-2 self-start' />
+
+        <div className='flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 sm:gap-x-3 sm:gap-y-1'>
+          {bottomTags.map((item) => (
+            <span key={item} className='text-muted-foreground/70 text-xs'>
+              {item}
+            </span>
+          ))}
+          <span className='text-muted-foreground/50 text-xs'>
+            {tokenUnitLabel}
+          </span>
+          {hiddenCount > 0 && (
+            <span className='text-muted-foreground/40 text-xs'>
+              +{hiddenCount}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+})

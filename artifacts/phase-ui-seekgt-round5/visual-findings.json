@@ -1,0 +1,131 @@
+{
+  "round": "phase-ui-seekgt-round5",
+  "startCommit": "00dd6cf5c7a84af3eca076a6f9cbf7e06a6a7273",
+  "scope": "The eight D-class layout issues recorded in artifacts/phase-ui-seekgt-final-visual/visual-comparison.md. No redesign, no new UI goals.",
+  "acceptanceOrigin": "http://127.0.0.1:4173",
+  "acceptanceBuild": "rsbuild preview (production bundle)",
+  "measurementNote": "Before values are from the round-4 final-visual audit, taken at commit 00dd6cf. After values are DOM measurements taken at the same viewports after the fix. No pixel comparison against a reference image was performed.",
+  "findings": [
+    {
+      "id": "D1",
+      "issue": "Chinese section headings broke mid-compound at 1920",
+      "route": "/",
+      "viewport": "1920x1080",
+      "beforeMeasurement": "\"为开发者打造，全程可观测\" 44px, 2 lines in a 502px column. \"两种请求格式，一个统一管控的网关\" rendered as [\"两种请求格式，一\", \"个统一管控的网关\"] — split inside the compound 一个.",
+      "rootCause": "Two independent causes. (1) In `side` mode the title sat in a 0.8fr column that resolved to 502px at both 1440 and 1920, because --container-content caps at 84rem, while type-section-title kept growing with vw (42px -> 44px). (2) Chinese has no inter-word spaces, so once a heading wraps the break can land between any two glyphs, and `text-wrap: balance` actively aimed for the midpoint.",
+      "changedFiles": [
+        "web/src/components/public/section.tsx",
+        "web/src/styles/index.css"
+      ],
+      "afterMeasurement": "Column ratio inverted to 1.15fr/0.85fr and heading max-width raised to max-w-3xl: \"为开发者打造，全程可观测\" is 1 line at 1280/1440/1920. \"两种请求格式，...\" is 1 line at 1280/1440 and at 1920 breaks as [\"两种请求格式，\", \"一个统一管控的网关\"] — at the comma. `word-break: keep-all` with `overflow-wrap: anywhere` as the escape hatch.",
+      "acceptanceResult": "PASS — no mid-compound break at any tested width; no heading overflow; asserted by 'D1: Chinese section headings never break mid-compound at 1920'."
+    },
+    {
+      "id": "D2",
+      "issue": "Pricing rendered two cards into a three-column grid",
+      "route": "/pricing",
+      "viewport": "1440x900 and 1920x1080",
+      "beforeMeasurement": "gridTemplateColumns \"416px 416px 416px\" with 2 cards; cards spanned 848 of 1280 available; 432px (34%) empty on the right; identical at both widths.",
+      "rootCause": "`md:grid-cols-2 lg:grid-cols-3` was applied unconditionally, independent of how many results exist. The catalogue had been fixed in round 4 with inline logic; pricing was missed and the logic was not shared.",
+      "changedFiles": [
+        "web/src/components/public/result-grid.ts",
+        "web/src/features/pricing/components/model-card-grid.tsx",
+        "web/src/features/model-catalog/index.tsx"
+      ],
+      "afterMeasurement": "Pricing: \"566px 566px\", cards span 1152 of 1280, 64px empty left AND 64px right — centred, not left-hugging. Catalogue unchanged at \"486px 486px\", span 992/992, 0px empty. Both now call the shared resultGridClass(count).",
+      "acceptanceResult": "PASS — column count never exceeds card count; asserted by 'D2: two results never render into a three-column grid' across both routes. No placeholder card added."
+    },
+    {
+      "id": "D3",
+      "issue": "Sign-in was mostly empty background at tablet portrait",
+      "route": "/sign-in, /sign-up",
+      "viewport": "768x1024",
+      "beforeMeasurement": "aside display:none (it was lg:flex, and 768 < 1024). Card 342px inside 960px main = 36% fill, with 309px dead space above and 309px below.",
+      "rootCause": "The narrative column existed only from `lg`, and the form column kept `items-center`, so between 768 and 1023 a lone card floated in an empty column.",
+      "changedFiles": ["web/src/features/auth/auth-layout.tsx"],
+      "afterMeasurement": "sign-in 768x1024: narrative visible as a band above the form, 369px + 342px card = 74% fill. sign-up 768x1024: 78%. 820x1180: 71%. 1024x768: side-by-side, 100%. 390x844: narrative hidden, form first, no overflow.",
+      "acceptanceResult": "PASS — >60% fill at 768 on both routes, form-first preserved at 390; asserted by the two D3 tests. No auth logic, OAuth, Passkey, captcha, forgot-password, redirect or Session behaviour touched."
+    },
+    {
+      "id": "D4",
+      "issue": "Leaderboard masthead used a bespoke type scale",
+      "route": "/leaderboard",
+      "viewport": "1440x900",
+      "beforeMeasurement": "h1 used a one-off clamp(1.75rem, 4vw, 2.5rem) that existed nowhere else, so the leaderboard title rendered visibly smaller than every other page title.",
+      "rootCause": "The component predated the shared typography tokens and was never migrated.",
+      "changedFiles": [
+        "web/src/features/rankings/components/rankings-hero.tsx",
+        "web/src/i18n/locales/en.json",
+        "web/src/i18n/locales/zh.json"
+      ],
+      "afterMeasurement": "Uses the shared type-page-title plus the standard eyebrow and lede treatment; h1 font-size now equals the catalogue's h1 to within 1px.",
+      "acceptanceResult": "PASS — asserted by 'D4: leaderboard masthead uses the shared page-title scale', which compares against /model-catalog rather than a literal value. Left alignment deliberately retained: the reference leaderboard is left-aligned."
+    },
+    {
+      "id": "D5",
+      "issue": "Two dates rendered as two giant slabs",
+      "route": "/leaderboard",
+      "viewport": "1440x900",
+      "beforeMeasurement": "Visual: each bar occupied roughly 30% of the chart width, so the panel read as a broken graphic rather than a sparse one. Not DOM-measurable — see limitation below.",
+      "rootCause": "A band scale divides the plot area by category count, so at two categories each bar takes half the plot minus padding. No maximum bar width was configured.",
+      "changedFiles": [
+        "web/src/features/rankings/components/models-section.tsx",
+        "web/src/features/rankings/components/market-share-section.tsx"
+      ],
+      "afterMeasurement": "barMaxWidth: 64 on both the models history and market share specs. The cap only binds at low cardinality; at 7, 30 or 365 points the natural width is already below it, so denser periods are unaffected.",
+      "acceptanceResult": "PARTIAL — the change is applied and verified in the after screenshots, but there is NO automated assertion. VChart renders to <canvas>, so bar geometry is not readable from the DOM; a screenshot-diff would be the only automated check and none is set up. This is the one item in this round without a regression test, and it is called out rather than glossed. No data point was added, removed or interpolated."
+    },
+    {
+      "id": "D6",
+      "issue": "About masthead was outside the public page system",
+      "route": "/about",
+      "viewport": "1440x900",
+      "beforeMeasurement": "Container padding `py-16 sm:py-24`, against pricing's `pt-16 pb-12 sm:pt-20 sm:pb-16` and the catalogue's `pt-24 pb-16 sm:pt-28` — three public pages, three different vertical rhythms.",
+      "rootCause": "Each page set its own masthead padding; only pricing had been tuned (in round 4).",
+      "changedFiles": [
+        "web/src/features/about/index.tsx",
+        "web/src/features/model-catalog/index.tsx"
+      ],
+      "afterMeasurement": "About, pricing and the catalogue all use `pt-16 pb-12 sm:pt-20 sm:pb-16`. About already used the shared type-label/type-page-title tokens, so only the container rhythm changed.",
+      "acceptanceResult": "PASS — left-aligned product narrative retained deliberately; New API attribution, AGPL and the upstream repository link are unchanged."
+    },
+    {
+      "id": "D7",
+      "issue": "Section spacing was excessive on large screens",
+      "route": "/",
+      "viewport": "1280 / 1440 / 1920",
+      "beforeMeasurement": "section-block was clamp(4rem, 8vw, 7.5rem): 102px a side at 1280, 115px at 1440, 120px at 1920 — i.e. 205px, 230px and 240px between adjacent sections.",
+      "rootCause": "The 8vw coefficient and 7.5rem ceiling were set for a narrower container and never revisited when the container widened to 84rem.",
+      "changedFiles": ["web/src/styles/index.css"],
+      "afterMeasurement": "clamp(4rem, 5.2vw, 5.25rem): 67px/134px at 1280, 75px/150px at 1440, 84px/168px at 1920. The 4rem floor is unchanged, so 390 and 768 keep exactly their previous 128px gap.",
+      "acceptanceResult": "PASS — every large width lands inside the 128–176px band; asserted by 'D7: section rhythm at large widths stays inside the intended band'. Small screens provably unaffected."
+    },
+    {
+      "id": "D8",
+      "issue": "Capability panels and the three-step row were under-weighted at 1920",
+      "route": "/",
+      "viewport": "1920x1080",
+      "beforeMeasurement": "Wide (col-span-7) and narrow (col-span-5) panels used identical internals: p-6, text-base title, text-sm body, text-xs index. The step markers were size-12 circles with size-5 glyphs against roughly 240px of surrounding whitespace.",
+      "rootCause": "The grid expressed hierarchy through span only; nothing expressed it through type or density, so at 1920 the section read as 1440 content stretched across a wider canvas.",
+      "changedFiles": [
+        "web/src/components/public/section.tsx",
+        "web/src/features/home/components/sections/features.tsx",
+        "web/src/features/home/components/sections/how-it-works.tsx"
+      ],
+      "afterMeasurement": "PublicFeaturePanel gained an explicit `emphasis` flag, set on the two col-span-7 panels: title text-lg/xl/2xl versus text-base/lg, body lg:text-base, padding p-6/lg:p-7/xl:p-8. Steps: marker size-12 -> lg:size-16, glyph size-5 -> lg:size-7, title text-base -> lg:text-xl, body lg:text-base, copy width max-w-xs -> lg:max-w-sm. All steps are lg-gated, so 390 and 768 are unchanged.",
+      "acceptanceResult": "PASS on the structural claim — the primary/secondary distinction is now explicit in the component API rather than implied by span. Whether the resulting weight matches the reference is a visual judgement and is NOT claimed here."
+    }
+  ],
+  "remaining": {
+    "A_brand": 1,
+    "B_dataVolume": 5,
+    "C_capability": 2,
+    "D_layout": 0,
+    "E_functional": 0
+  },
+  "notReclaimed": [
+    "No pixel-level comparison was performed. The SeekGT reference screenshots were not available to this session — they are not stored in the repository and did not survive context compaction. Statements about the reference are second-hand from docs/phase-ui-seekgt-alignment.md.",
+    "D5 has no automated regression test because VChart renders to canvas.",
+    "Sparsity on the leaderboard, catalogue and pricing pages is unchanged and is a real data-volume limit: two models, two days of history. Nothing was padded."
+  ]
+}

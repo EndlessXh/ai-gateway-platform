@@ -1,0 +1,4 @@
+leaderboard-direct-entry       /leaderboard     http=200 404=false routerDT=false queryDT=false overflow=false dark=false h=1868  h1="排行榜"
+leaderboard-legacy-redirect    /rankings        http=200 404=false routerDT=false queryDT=false overflow=false dark=false h=1868  h1="排行榜"
+leaderboard-with-period        /leaderboard?period=month http=200 404=false routerDT=false queryDT=false overflow=false dark=false h=1868  h1="排行榜"
+true-404                       /this-route-does-not-exist http=200 404=true  routerDT=false queryDT=false overflow=false dark=false h=928   h1="网关中不存在此页面。"

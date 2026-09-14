@@ -1,0 +1,11 @@
+home-1440-light-zh               1440px light/zhCN dark=false overflow=false
+model-catalog-1440-light-zh      1440px light/zhCN dark=false overflow=false
+rankings-1440-light-zh           1440px light/zhCN dark=false overflow=false
+pricing-1440-light-zh            1440px light/zhCN dark=false overflow=false
+about-1440-light-zh              1440px light/zhCN dark=false overflow=false
+sign-in-1440-light-zh            1440px light/zhCN dark=false overflow=false
+home-1440-dark-en                1440px dark/en dark=true overflow=false
+model-catalog-1440-dark-en       1440px dark/en dark=true overflow=false
+home-390-light-zh                390px light/zhCN dark=false overflow=false
+model-catalog-390-light-zh       390px light/zhCN dark=false overflow=false
+model-catalog-768-light-zh       768px light/zhCN dark=false overflow=false

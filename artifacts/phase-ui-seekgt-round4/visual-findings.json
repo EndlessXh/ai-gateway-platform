@@ -1,0 +1,115 @@
+{
+  "round": "phase-ui-seekgt-round4",
+  "startCommit": "2ca539a53f4a562a1f348052f1edd0693e667b2f",
+  "acceptanceOrigin": "http://127.0.0.1:4173",
+  "acceptanceBuild": "rsbuild preview (production bundle)",
+  "note": "Severity P0 items were reproduced against the running instance before any code was changed; see repro-log.txt. Verification results are measured (DOM/route/overflow), not visual judgements. No pixel comparison against a reference image was performed.",
+  "findings": [
+    {
+      "id": "R4-01",
+      "route": "/leaderboard",
+      "viewport": "1440x900",
+      "severity": "P0",
+      "referenceDifference": "Typing the leaderboard URL returned the 404 page instead of the leaderboard.",
+      "rootCause": "No /leaderboard route existed. The page lived only at /rankings, and the header linked /rankings, so every existing E2E reached it by click and never exercised direct entry.",
+      "changedFile": "web/src/routes/leaderboard/index.tsx, web/src/routes/leaderboard/-search.ts, web/src/routes/rankings/index.tsx, web/src/hooks/use-top-nav-links.ts, web/src/features/rankings/index.tsx",
+      "verificationResult": "PASS - direct entry renders the leaderboard; /rankings?period=week redirects to /leaderboard?period=week; header href is /leaderboard. p0-verify-log.txt + e2e/phase-ui-round4-routing.e2e.ts"
+    },
+    {
+      "id": "R4-02",
+      "route": "all public",
+      "viewport": "all",
+      "severity": "P0",
+      "referenceDifference": "TanStack Router Devtools panel visible bottom-right in review screenshots.",
+      "rootCause": "Mounted for the whole of MODE === 'development' in __root.tsx. Never present in the production bundle, but rsbuild.config.ts binds port 4173 for both `dev` and `preview`, so the agreed acceptance URL could be serving either build.",
+      "changedFile": "web/src/routes/__root.tsx",
+      "verificationResult": "PASS - routerDT=false on all 56 route/viewport combinations; asserted by 'public pages carry no devtools overlays'."
+    },
+    {
+      "id": "R4-03",
+      "route": "all public",
+      "viewport": "all",
+      "severity": "P0",
+      "referenceDifference": "Coloured circular floating icon bottom-left, suspected browser extension.",
+      "rootCause": "It is ours, not an extension: ReactQueryDevtools with buttonPosition='bottom-left', mounted by the same condition as R4-02.",
+      "changedFile": "web/src/routes/__root.tsx",
+      "verificationResult": "PASS - queryDT=false on all 56 combinations. Detected structurally via .tsqd-parent-container rather than by eye."
+    },
+    {
+      "id": "R4-04",
+      "route": "all",
+      "viewport": "all",
+      "severity": "P1",
+      "referenceDifference": "Site read as a green product; reference is white with a blue-cyan wash, small violet accent and near-black CTA.",
+      "rootCause": "Every neutral token carried the brand hue 165 - background, surface, foreground, border, muted - and --primary was green, so green was the page surface rather than the brand mark.",
+      "changedFile": "web/src/styles/theme.css, web/src/styles/index.css",
+      "verificationResult": "PARTIAL - measurable parts pass: background is now oklch(1 0 0), --primary is near-black, ambient-field and text-gradient-brand use blue/violet, dark mode is tuned separately and reports dark=true on 16/16 dark rows. Whether it now resembles the reference is a visual judgement not made here."
+    },
+    {
+      "id": "R4-05",
+      "route": "/",
+      "viewport": "1440x900, 1920x1080",
+      "severity": "P1",
+      "referenceDifference": "Typography and metrics undersized; page sparse at 1920.",
+      "rootCause": "type-hero capped at 3.5rem, type-section-title at 2.25rem, metric values at text-4xl, and --container-content at 76rem left ~350px of gutter per side at 1920.",
+      "changedFile": "web/src/styles/index.css, web/src/styles/theme.css, web/src/features/home/components/sections/stats.tsx",
+      "verificationResult": "PASS (measured) - hero clamp now 2.25-4.1rem, section title 1.65-2.75rem, container 84rem, metric values text-4xl/5xl/6xl with column rules. No horizontal overflow at any of the seven widths."
+    },
+    {
+      "id": "R4-06",
+      "route": "/model-catalog",
+      "viewport": "1920x1080",
+      "severity": "P1",
+      "referenceDifference": "Page titled '模型'; two cards hugged the left with the right third of the page empty.",
+      "rootCause": "Fixed 2xl:grid-cols-3 grid regardless of result count, and a heading that did not name the product surface.",
+      "changedFile": "web/src/features/model-catalog/index.tsx",
+      "verificationResult": "PASS - heading is now 'Model Square' / 模型广场; the third column only engages at >= 3 results, otherwise the grid is capped at max-w-5xl so two cards fill their row. No placeholder card invented."
+    },
+    {
+      "id": "R4-07",
+      "route": "/pricing",
+      "viewport": "1440x900",
+      "severity": "P2",
+      "referenceDifference": "Large dead band between header and title.",
+      "rootCause": "pt-24/sm:pt-28 on a page whose content is short because only two models exist.",
+      "changedFile": "web/src/features/pricing/index.tsx",
+      "verificationResult": "PASS (measured) - page height fell from 1146 to 1114 with the masthead moved up; provisional banner and pricing API semantics untouched."
+    },
+    {
+      "id": "R4-08",
+      "route": "all public",
+      "viewport": "all",
+      "severity": "P2",
+      "referenceDifference": "Section eyebrows would have flattened to the same colour as their headings once --primary became near-black.",
+      "rootCause": "Nine call sites used 'type-label text-primary' for the accent role.",
+      "changedFile": "web/src/styles/index.css plus 9 component files",
+      "verificationResult": "PASS - new text-brand-accent utility resolves to --brand-blue; zero remaining 'type-label text-primary' occurrences."
+    },
+    {
+      "id": "R4-09",
+      "route": "/leaderboard",
+      "viewport": "n/a",
+      "severity": "P2",
+      "referenceDifference": "English UI said 'Rankings' while the route said /leaderboard and Chinese said 排行榜.",
+      "rootCause": "Vocabulary split between route, nav label and heading - the same drift that let /leaderboard 404 unnoticed.",
+      "changedFile": "web/src/i18n/locales/en.json",
+      "verificationResult": "PASS - en value for the 'Rankings' key is now 'Leaderboard'; zh unchanged at 排行榜."
+    },
+    {
+      "id": "R4-10",
+      "route": "/model-catalog",
+      "viewport": "n/a",
+      "severity": "P2",
+      "referenceDifference": "Not a visual finding - surfaced while running the suite against a production build.",
+      "rootCause": "main.tsx retries queries until failureCount > 3 in PROD but never retries in DEV. The catalog error-state test allowed the default 5s, which is shorter than four attempts plus exponential backoff, so it passed against a dev server and failed against a production bundle.",
+      "changedFile": "web/e2e/phase5a-model-catalog.e2e.ts",
+      "verificationResult": "PASS - assertion timeout sized to the documented retry chain. The retry policy itself was not weakened."
+    }
+  ],
+  "openGaps": [
+    "No pixel-level comparison was performed. No reference screenshot is stored in this repository and no image-diff tool was run.",
+    "Leaderboard, pricing and catalogue density remain below the reference because the deployment has two models and two days of data. No series, card or figure was fabricated to fill them.",
+    "Sign-in/sign-up left narrative column is still sparse at 768-1024; only the colour system and shared shell changed this round.",
+    "Two authenticated suites (phase5c-subscriptions, phase4-7-i18n zhCN) fail intermittently under full-suite ordering and pass in isolation. Pre-existing shared-backend-state flakiness, unrelated to the public pages changed here."
+  ]
+}

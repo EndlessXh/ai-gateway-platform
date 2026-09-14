@@ -1,0 +1,62 @@
+{
+  "model": "claude-opus-4.6",
+  "max_tokens": 4096,
+  "stream": true,
+  "system": [
+    {
+      "type": "text",
+      "text": "synthetic-system",
+      "cache_control": {
+        "type": "ephemeral"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "synthetic-call",
+          "name": "safe_tool",
+          "input": {
+            "value": "synthetic"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "synthetic-call",
+          "content": "synthetic-result"
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "safe_tool",
+      "description": "Synthetic fixture tool",
+      "input_schema": {
+        "type": "object"
+      }
+    }
+  ],
+  "thinking": {
+    "type": "enabled",
+    "budget_tokens": 1024
+  },
+  "metadata": {
+    "user_id": "synthetic-client"
+  },
+  "context_management": {
+    "edits": [
+      {
+        "type": "clear_tool_uses_20250919"
+      }
+    ]
+  }
+}

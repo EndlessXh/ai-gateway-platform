@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">Gateway mark</title>
+  <desc id="desc">Geometric gateway symbol</desc>
+  <rect width="64" height="64" rx="14" fill="#163d35"/>
+  <path d="M17 16v32M17 32h18M35 16v32M35 32l12-16M35 32l12 16" fill="none" stroke="#f3f7f5" stroke-width="5" stroke-linecap="square" stroke-linejoin="round"/>
+</svg>

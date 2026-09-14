@@ -1,0 +1,14 @@
+r2-home-1440-light-zh              1440px light/zhCN dark=false overflow=false h=3759
+r2-home-1440-dark-en               1440px dark/en dark=true overflow=false h=3981
+r2-home-390-light-zh                390px light/zhCN dark=false overflow=false h=6054
+r2-pricing-1440-light-zh           1440px light/zhCN dark=false overflow=false h=1146
+r2-pricing-1440-dark-en            1440px dark/en dark=true overflow=false h=1170
+r2-pricing-390-light-zh             390px light/zhCN dark=false overflow=false h=1424
+r2-catalog-1440-light-zh           1440px light/zhCN dark=false overflow=false h=1315
+r2-catalog-1440-dark-en            1440px dark/en dark=true overflow=false h=1427
+r2-rankings-1440-light-zh          1440px light/zhCN dark=false overflow=false h=1868
+r2-signin-1440-light-zh            1440px light/zhCN dark=false overflow=false h=1198
+r2-signin-1440-dark-en             1440px dark/en dark=true overflow=false h=1198
+r2-signin-390-light-zh              390px light/zhCN dark=false overflow=false h=1274
+r2-signup-1440-light-zh            1440px light/zhCN dark=false overflow=false h=1198
+r2-about-1440-light-zh             1440px light/zhCN dark=false overflow=false h=1209
