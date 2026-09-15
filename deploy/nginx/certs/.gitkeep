@@ -1,0 +1,2 @@
+# Certificates and private keys go here. This directory is gitignored except for this file.
+# Never commit a .pem, .key, .crt or .pfx.
