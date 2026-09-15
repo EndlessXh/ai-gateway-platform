@@ -219,8 +219,9 @@ func AddToken(c *gin.Context) {
 		ModelLimitsEnabled: token.ModelLimitsEnabled,
 		ModelLimits:        token.ModelLimits,
 		AllowIps:           token.AllowIps,
-		Group:              token.Group,
-		CrossGroupRetry:    token.CrossGroupRetry,
+		// API keys always follow the owning user's group for routing and billing.
+		Group:           "",
+		CrossGroupRetry: false,
 	}
 	err = cleanToken.Insert()
 	if err != nil {
@@ -297,8 +298,9 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.ModelLimitsEnabled = token.ModelLimitsEnabled
 		cleanToken.ModelLimits = token.ModelLimits
 		cleanToken.AllowIps = token.AllowIps
-		cleanToken.Group = token.Group
-		cleanToken.CrossGroupRetry = token.CrossGroupRetry
+		// Do not accept a caller-selected billing group for an API key.
+		cleanToken.Group = ""
+		cleanToken.CrossGroupRetry = false
 	}
 	err = cleanToken.Update()
 	if err != nil {
