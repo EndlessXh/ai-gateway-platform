@@ -25,10 +25,11 @@ exit /b 0
 '@ | Set-Content -LiteralPath (Join-Path $Directory 'docker.cmd') -NoNewline
 }
 function Write-MockOpenSsl {
-    param([string] $Directory)
-    @'
+    param([string] $Directory, [int] $ExitCode = 0)
+    @"
 @echo off
 setlocal EnableDelayedExpansion
+if not "%AIGW_OPENSSL_LOG%"=="" > "%AIGW_OPENSSL_LOG%" echo %~f0
 set "key=" & set "cert="
 :next
 if "%~1"=="" goto done
@@ -41,8 +42,8 @@ if "%key%"=="" exit /b 2
 if "%cert%"=="" exit /b 2
 > "%key%" echo disposable key
 > "%cert%" echo disposable certificate
-exit /b 0
-'@ | Set-Content -LiteralPath (Join-Path $Directory 'openssl.cmd') -NoNewline
+exit /b $ExitCode
+"@ | Set-Content -LiteralPath (Join-Path $Directory 'openssl.cmd') -NoNewline
 }
 function Run-Verify {
     param([string] $Root, [string] $ConfigRoot, [string] $EvidencePath, [string] $ToolPath, [string] $CertTemp)
@@ -51,6 +52,45 @@ function Run-Verify {
         $env:PATH = $ToolPath
         $env:TEMP = $CertTemp; $env:TMP = $CertTemp
         $out = & (Get-Process -Id $PID).Path -NoProfile -File (Join-Path $repo 'scripts/verify-nginx.ps1') -RepoRoot $Root -ConfigRoot $ConfigRoot -EvidencePath $EvidencePath 2>&1 | Out-String
+        return [pscustomobject]@{ Code = $LASTEXITCODE; Output = $out }
+    } finally {
+        $env:PATH = $oldPath; $env:TEMP = $oldTemp; $env:TMP = $oldTmp
+    }
+}
+function Run-VerifyWithOpenSslMatches {
+    param(
+        [string] $Root,
+        [string] $ConfigRoot,
+        [string] $EvidencePath,
+        [string] $ToolPath,
+        [string] $CertTemp,
+        [string] $FirstOpenSsl,
+        [string] $SecondOpenSsl,
+        [string] $InvocationLog
+    )
+    $wrapper = Join-Path $Root 'run-verify-with-multiple-openssl.ps1'
+    $quote = { param([string] $Value) "'" + $Value.Replace("'", "''") + "'" }
+    @"
+function Get-Command {
+    [CmdletBinding()]
+    param([Parameter(Position = 0)][string] `$Name, [System.Management.Automation.CommandTypes] `$CommandType)
+    if (`$Name -eq 'openssl' -and `$CommandType -eq [System.Management.Automation.CommandTypes]::Application) {
+        return @(
+            [pscustomobject]@{ CommandType = 'Application'; Source = $(& $quote $FirstOpenSsl) },
+            [pscustomobject]@{ CommandType = 'Application'; Source = $(& $quote $SecondOpenSsl) }
+        )
+    }
+    return Microsoft.PowerShell.Core\Get-Command @PSBoundParameters
+}
+`$env:AIGW_OPENSSL_LOG = $(& $quote $InvocationLog)
+& $(& $quote (Join-Path $repo 'scripts/verify-nginx.ps1')) -RepoRoot $(& $quote $Root) -ConfigRoot $(& $quote $ConfigRoot) -EvidencePath $(& $quote $EvidencePath)
+exit `$LASTEXITCODE
+"@ | Set-Content -LiteralPath $wrapper -NoNewline
+    $oldPath = $env:PATH; $oldTemp = $env:TEMP; $oldTmp = $env:TMP
+    try {
+        $env:PATH = $ToolPath
+        $env:TEMP = $CertTemp; $env:TMP = $CertTemp
+        $out = & (Get-Process -Id $PID).Path -NoProfile -File $wrapper 2>&1 | Out-String
         return [pscustomobject]@{ Code = $LASTEXITCODE; Output = $out }
     } finally {
         $env:PATH = $oldPath; $env:TEMP = $oldTemp; $env:TMP = $oldTmp
@@ -122,6 +162,24 @@ http { include /etc/nginx/conf.d/*.conf; }
     Assert-That (-not (Get-ChildItem -LiteralPath $certTemp -Filter 'aigw-nginx-verify-*' -ErrorAction SilentlyContinue)) 'disposable certificate directory must be cleaned'
 
     Remove-Item -LiteralPath $evidence -Force
+    $secondTools = Join-Path $root 'second-mock-tools'
+    New-Item -ItemType Directory -Force -Path $secondTools | Out-Null
+    Write-MockOpenSsl -Directory $secondTools
+    $invocationLog = Join-Path $root 'openssl-invocation.log'
+    $result = Run-VerifyWithOpenSslMatches $root $config $evidence $tools $certTemp (Join-Path $tools 'openssl.cmd') (Join-Path $secondTools 'openssl.cmd') $invocationLog
+    Assert-That ($result.Code -eq 0 -and (Test-Path -LiteralPath $evidence)) 'multiple openssl application matches must still verify successfully'
+    Assert-That ((Get-Content -LiteralPath $invocationLog -Raw).Trim() -eq (Resolve-Path -LiteralPath (Join-Path $tools 'openssl.cmd')).Path) 'multiple openssl matches must invoke only the first executable path'
+    Assert-That (-not (Get-ChildItem -LiteralPath $certTemp -Filter 'aigw-nginx-verify-*' -ErrorAction SilentlyContinue)) 'multiple-match disposable certificate directory must be cleaned'
+
+    Remove-Item -LiteralPath $evidence -Force
+    Write-MockOpenSsl -Directory $tools -ExitCode 7
+    $result = Run-Verify $root $config $evidence $tools $certTemp
+    Assert-That ($result.Code -ne 0 -and $result.Output -match 'Could not generate test certificate \(exit 7\)') 'non-zero openssl must fail verification clearly'
+    Assert-That (-not (Test-Path -LiteralPath $evidence)) 'non-zero openssl must not write evidence'
+    Assert-That (-not (Get-ChildItem -LiteralPath $certTemp -Filter 'aigw-nginx-verify-*' -ErrorAction SilentlyContinue)) 'non-zero openssl disposable certificate directory must be cleaned'
+    Write-MockOpenSsl -Directory $tools
+
+    if (Test-Path -LiteralPath $evidence) { Remove-Item -LiteralPath $evidence -Force }
     Remove-Item -LiteralPath (Join-Path $tools 'openssl.cmd') -Force
     $result = Run-Verify $root $config $evidence $tools $certTemp
     Assert-That ($result.Code -ne 0 -and $result.Output -match "Required executable 'openssl' was not found") 'missing openssl must fail clearly without evidence'

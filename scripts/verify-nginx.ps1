@@ -70,16 +70,21 @@ UNVERIFIED until that job passes.
 }
 
 # Throwaway certificate material, outside the repository.
-$openssl = Get-Command openssl -CommandType Application -ErrorAction SilentlyContinue
-if (-not $openssl) {
+$opensslCommand = Get-Command openssl -CommandType Application -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if (-not $opensslCommand) {
     throw "Required executable 'openssl' was not found on PATH. It is needed only to generate a disposable certificate for nginx syntax verification; install or expose openssl before retrying."
+}
+$opensslPath = [string]$opensslCommand.Source
+if ([string]::IsNullOrWhiteSpace($opensslPath) -or -not [IO.Path]::IsPathRooted($opensslPath)) {
+    throw "Resolved 'openssl' application does not have an absolute executable path."
 }
 $certDir = Join-Path ([System.IO.Path]::GetTempPath()) "aigw-nginx-verify-$(Get-Random)"
 New-Item -ItemType Directory -Force -Path $certDir | Out-Null
 
 try {
     Write-Host "Generating throwaway certificate for syntax check..." -ForegroundColor DarkGray
-    & $openssl.Source req -x509 -newkey rsa:2048 -nodes -days 1 `
+    & $opensslPath req -x509 -newkey rsa:2048 -nodes -days 1 `
         -keyout (Join-Path $certDir 'privkey.pem') `
         -out (Join-Path $certDir 'fullchain.pem') `
         -subj '/CN=gateway.example.invalid'
