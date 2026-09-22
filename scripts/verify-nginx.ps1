@@ -91,7 +91,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Could not generate test certificate (exit $LASTEXITCODE)" }
 
     Write-Host "Running nginx -t against the real configuration..." -ForegroundColor Cyan
+    # nginx resolves the Compose upstream name while loading this real config.
+    # Map it only inside the otherwise networkless throwaway container: nginx -t
+    # needs name resolution, but must not reach the production app or network.
     $output = & docker run --rm --network none `
+        --add-host 'app:127.0.0.1' `
         -v "$(Join-Path $nginxDir 'nginx.conf'):/etc/nginx/nginx.conf:ro" `
         -v "$(Join-Path $nginxDir 'conf.d'):/etc/nginx/conf.d:ro" `
         -v "${certDir}:/etc/nginx/certs:ro" `

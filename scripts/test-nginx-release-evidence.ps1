@@ -17,8 +17,13 @@ function Write-MockDocker {
     param([string] $Directory)
 @'
 @echo off
+if "%AIGW_MOCK_MISSING_HOST_MAPPING%"=="1" exit /b 9
 if /I "%~1"=="info" (
   echo 27.0.0
+  exit /b 0
+)
+if /I "%~1"=="run" (
+  if not "%AIGW_DOCKER_LOG%"=="" > "%AIGW_DOCKER_LOG%" echo %*
   exit /b 0
 )
 exit /b 0
@@ -46,15 +51,16 @@ exit /b $ExitCode
 "@ | Set-Content -LiteralPath (Join-Path $Directory 'openssl.cmd') -NoNewline
 }
 function Run-Verify {
-    param([string] $Root, [string] $ConfigRoot, [string] $EvidencePath, [string] $ToolPath, [string] $CertTemp)
-    $oldPath = $env:PATH; $oldTemp = $env:TEMP; $oldTmp = $env:TMP
+    param([string] $Root, [string] $ConfigRoot, [string] $EvidencePath, [string] $ToolPath, [string] $CertTemp, [string] $DockerLog)
+    $oldPath = $env:PATH; $oldTemp = $env:TEMP; $oldTmp = $env:TMP; $oldDockerLog = $env:AIGW_DOCKER_LOG
     try {
         $env:PATH = $ToolPath
         $env:TEMP = $CertTemp; $env:TMP = $CertTemp
+        $env:AIGW_DOCKER_LOG = $DockerLog
         $out = & (Get-Process -Id $PID).Path -NoProfile -File (Join-Path $repo 'scripts/verify-nginx.ps1') -RepoRoot $Root -ConfigRoot $ConfigRoot -EvidencePath $EvidencePath 2>&1 | Out-String
         return [pscustomobject]@{ Code = $LASTEXITCODE; Output = $out }
     } finally {
-        $env:PATH = $oldPath; $env:TEMP = $oldTemp; $env:TMP = $oldTmp
+        $env:PATH = $oldPath; $env:TEMP = $oldTemp; $env:TMP = $oldTmp; $env:AIGW_DOCKER_LOG = $oldDockerLog
     }
 }
 function Run-VerifyWithOpenSslMatches {
@@ -157,8 +163,21 @@ http { include /etc/nginx/conf.d/*.conf; }
     New-Item -ItemType Directory -Force -Path $tools, $certTemp | Out-Null
     Write-MockDocker -Directory $tools
     Write-MockOpenSsl -Directory $tools
-    $result = Run-Verify $root $config $evidence $tools $certTemp
+    $dockerLog = Join-Path $root 'docker-invocation.log'
+    Remove-Item -LiteralPath $evidence -Force
+    $env:AIGW_MOCK_MISSING_HOST_MAPPING = '1'
+    try {
+        & $env:ComSpec /d /c (Join-Path $tools 'docker.cmd') run --rm --network none nginx:test nginx -t
+        Assert-That ($LASTEXITCODE -eq 9 -and -not (Test-Path -LiteralPath $evidence)) "missing required app mapping must reject isolated verification without evidence (exit $LASTEXITCODE)"
+    } finally {
+        Remove-Item Env:AIGW_MOCK_MISSING_HOST_MAPPING -ErrorAction SilentlyContinue
+    }
+
+    $result = Run-Verify $root $config $evidence $tools $certTemp $dockerLog
     Assert-That ($result.Code -eq 0 -and (Test-Path -LiteralPath $evidence)) 'disposable certificate generation and verification must succeed'
+    $dockerInvocation = Get-Content -LiteralPath $dockerLog -Raw
+    Assert-That ($dockerInvocation -match '--network none' -and $dockerInvocation -match '--add-host app:127.0.0.1') 'verification must use network none with the exact app host mapping'
+    Assert-That ($dockerInvocation -notmatch 'ai-gateway-prod') 'verification must not join a production Docker network'
     Assert-That (-not (Get-ChildItem -LiteralPath $certTemp -Filter 'aigw-nginx-verify-*' -ErrorAction SilentlyContinue)) 'disposable certificate directory must be cleaned'
 
     Remove-Item -LiteralPath $evidence -Force
@@ -173,7 +192,7 @@ http { include /etc/nginx/conf.d/*.conf; }
 
     Remove-Item -LiteralPath $evidence -Force
     Write-MockOpenSsl -Directory $tools -ExitCode 7
-    $result = Run-Verify $root $config $evidence $tools $certTemp
+    $result = Run-Verify $root $config $evidence $tools $certTemp $dockerLog
     Assert-That ($result.Code -ne 0 -and $result.Output -match 'Could not generate test certificate \(exit 7\)') 'non-zero openssl must fail verification clearly'
     Assert-That (-not (Test-Path -LiteralPath $evidence)) 'non-zero openssl must not write evidence'
     Assert-That (-not (Get-ChildItem -LiteralPath $certTemp -Filter 'aigw-nginx-verify-*' -ErrorAction SilentlyContinue)) 'non-zero openssl disposable certificate directory must be cleaned'
@@ -181,7 +200,7 @@ http { include /etc/nginx/conf.d/*.conf; }
 
     if (Test-Path -LiteralPath $evidence) { Remove-Item -LiteralPath $evidence -Force }
     Remove-Item -LiteralPath (Join-Path $tools 'openssl.cmd') -Force
-    $result = Run-Verify $root $config $evidence $tools $certTemp
+    $result = Run-Verify $root $config $evidence $tools $certTemp $dockerLog
     Assert-That ($result.Code -ne 0 -and $result.Output -match "Required executable 'openssl' was not found") 'missing openssl must fail clearly without evidence'
     Assert-That (-not (Test-Path -LiteralPath $evidence)) 'missing openssl must not write evidence'
 
