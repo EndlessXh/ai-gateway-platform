@@ -241,17 +241,35 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, header *http.Header, info *
 	return nil
 }
 
-// openRouterProviderPolicy builds the OpenRouter provider-routing policy.
+// openRouterProviderPolicy merges the server-owned OpenRouter policy into an
+// existing provider object. User requests cannot supply that object (the relay
+// validator rejects it), but conversion paths may have already set compatible
+// provider controls. Cost ordering and fallback remain platform-owned.
+//
 // require_parameters is unconditional: it rejects silent parameter dropping
 // and is unrelated to data retention. data_collection/zdr default to the
-// strictest privacy posture (ADR 0009) and are only omitted, per channel, when
-// AllowOpenRouterDataRetention is explicitly set — some models currently have
-// no OpenRouter endpoint that satisfies zero data retention.
-func openRouterProviderPolicy(allowDataRetention bool) []byte {
-	if allowDataRetention {
-		return common.StringToByteSlice(`{"require_parameters":true}`)
+// strictest privacy posture (ADR 0009) and are only forced when the channel has
+// not explicitly opted into data retention.
+func openRouterProviderPolicy(current json.RawMessage, allowDataRetention bool) ([]byte, error) {
+	policy := make(map[string]json.RawMessage)
+	if len(current) != 0 && string(current) != "null" {
+		if err := common.Unmarshal(current, &policy); err != nil {
+			return nil, fmt.Errorf("invalid OpenRouter provider policy: %w", err)
+		}
 	}
-	return common.StringToByteSlice(`{"data_collection":"deny","zdr":true,"require_parameters":true}`)
+
+	// These controls could override the platform's cost-first fallback policy.
+	for _, field := range []string{"sort", "allow_fallbacks", "only", "ignore", "order"} {
+		delete(policy, field)
+	}
+	policy["sort"] = json.RawMessage(`"price"`)
+	policy["allow_fallbacks"] = json.RawMessage(`true`)
+	policy["require_parameters"] = json.RawMessage(`true`)
+	if !allowDataRetention {
+		policy["data_collection"] = json.RawMessage(`"deny"`)
+		policy["zdr"] = json.RawMessage(`true`)
+	}
+	return common.Marshal(policy)
 }
 
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
@@ -262,7 +280,11 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 		request.StreamOptions = nil
 	}
 	if info.ChannelType == constant.ChannelTypeOpenRouter {
-		request.Provider = openRouterProviderPolicy(info.ChannelOtherSettings.AllowOpenRouterDataRetention)
+		provider, err := openRouterProviderPolicy(request.Provider, info.ChannelOtherSettings.AllowOpenRouterDataRetention)
+		if err != nil {
+			return nil, err
+		}
+		request.Provider = provider
 		if len(request.Usage) == 0 {
 			request.Usage = json.RawMessage(`{"include":true}`)
 		}
@@ -617,7 +639,11 @@ func detectImageMimeType(filename string) string {
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
 	if info != nil && info.ChannelType == constant.ChannelTypeOpenRouter {
-		request.Provider = openRouterProviderPolicy(info.ChannelOtherSettings.AllowOpenRouterDataRetention)
+		provider, err := openRouterProviderPolicy(request.Provider, info.ChannelOtherSettings.AllowOpenRouterDataRetention)
+		if err != nil {
+			return nil, err
+		}
+		request.Provider = provider
 	}
 	//  转换模型推理力度后缀
 	effort, originModel := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(request.Model)

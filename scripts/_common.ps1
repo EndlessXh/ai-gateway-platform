@@ -6,10 +6,17 @@
 Set-StrictMode -Version Latest
 
 function Get-RepoRoot {
+    param([string] $Root)
     <#
       Resolves the repository root from this script's own location, so the
       scripts work regardless of the caller's current directory.
     #>
+    if ($Root) {
+        if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
+            throw "Repository root not found: $Root"
+        }
+        return (Resolve-Path -LiteralPath $Root).Path
+    }
     return (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 }
 
@@ -17,10 +24,11 @@ function Get-EnvFilePath {
     param(
         [string] $EnvFile,
         [ValidateSet('dev', 'prod')]
-        [string] $Environment = 'dev'
+        [string] $Environment = 'dev',
+        [string] $Root
     )
 
-    $root = Get-RepoRoot
+    $root = Get-RepoRoot -Root $Root
     if ($EnvFile) {
         $candidate = if ([System.IO.Path]::IsPathRooted($EnvFile)) { $EnvFile } else { Join-Path $root $EnvFile }
     } else {

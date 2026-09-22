@@ -33,15 +33,19 @@ param(
     [string] $EnvFile,
     [ValidateSet('dev', 'prod')]
     [string] $Environment = 'dev',
-    [switch] $Strict
+    [switch] $Strict,
+    [string] $RepoRoot,
+    [string] $ConfigRoot,
+    [string] $EvidencePath
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '_common.ps1')
+. (Join-Path $PSScriptRoot '_nginx-evidence.ps1')
 
-$root = Get-RepoRoot
-$envPath = Get-EnvFilePath -EnvFile $EnvFile -Environment $Environment
+$root = Get-RepoRoot -Root $RepoRoot
+$envPath = Get-EnvFilePath -EnvFile $EnvFile -Environment $Environment -Root $root
 if (-not (Test-Path -LiteralPath $envPath)) {
     throw "Env file not found: $envPath`nRun: pwsh ./scripts/new-secrets.ps1 -Environment $Environment"
 }
@@ -157,11 +161,29 @@ if ($Environment -eq 'prod') {
 # ── 5. nginx configuration verified ──────────────────────────────────────────
 # Tracked as an explicit blocker because it could not be checked on the
 # authoring machine (no container registry route). CI runs it.
-$nginxStamp = Join-Path $root '.platform-tmp/nginx-verified.stamp'
-if (Test-Path -LiteralPath $nginxStamp) {
-    Add-Pass 'NGINX' "nginx -t previously passed ($(Get-Content -LiteralPath $nginxStamp -Raw))".Trim()
+$nginxDir = if ($ConfigRoot) { $ConfigRoot } else { Join-Path $root 'deploy/nginx' }
+$nginxStamp = if ($EvidencePath) { $EvidencePath } else { Join-Path $root '.platform-tmp/nginx-verified.stamp' }
+if (-not (Test-Path -LiteralPath $nginxStamp)) {
+    Add-Blocker 'NGINX' 'nginx verification evidence missing. Run scripts/verify-nginx.ps1.'
 } else {
-    Add-Blocker 'NGINX' 'nginx configuration has not been syntax-checked on this machine. Run scripts/verify-nginx.ps1 (needs container registry access), or confirm the CI deploy-config job passed.'
+    try {
+        $evidence = Read-NginxVerificationEvidence -EvidencePath $nginxStamp
+        $current = Get-NginxConfigFingerprint -ConfigRoot $nginxDir
+        $nginxImageName = Get-Val 'NGINX_IMAGE'
+        if (-not $nginxImageName) { $nginxImageName = 'nginx' }
+        $nginxImageTag = Get-Val 'NGINX_TAG'
+        if (-not $nginxImageTag) {
+            Add-Blocker 'NGINX' 'NGINX_TAG is required to validate nginx verification evidence.'
+        } elseif ($evidence.nginxImage -ne "${nginxImageName}:$nginxImageTag") {
+            Add-Blocker 'NGINX' 'nginx verification image does not match the configured production nginx image. Run scripts/verify-nginx.ps1 again.'
+        } elseif ($evidence.configFingerprint -ne $current.Fingerprint -or (@($evidence.configFiles) -join "`n") -ne (@($current.Files) -join "`n")) {
+            Add-Blocker 'NGINX' 'nginx configuration changed since verification. Run scripts/verify-nginx.ps1 again.'
+        } else {
+            Add-Pass 'NGINX' "nginx verification evidence matches current configuration ($($evidence.nginxImage))"
+        }
+    } catch {
+        Add-Blocker 'NGINX' 'nginx verification evidence invalid. Run scripts/verify-nginx.ps1 again.'
+    }
 }
 
 # ── Report ───────────────────────────────────────────────────────────────────

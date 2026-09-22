@@ -80,6 +80,8 @@ await i18n.use(initReactI18next).init({
 })
 
 const { ModelCatalogCard } = await import('../model-catalog-card')
+const { ModelCatalogDetailsDrawer } =
+  await import('../model-catalog-details-drawer')
 const { formatPrice, formatRequestPrice } =
   await import('@/features/pricing/lib/price')
 const reactTestGlobals = globalThis as typeof globalThis & {
@@ -364,6 +366,34 @@ describe('model catalog card', () => {
       false
     )
     await unmountCard(unknown)
+  })
+
+  test('does not disclose the model ratio in catalog details', async () => {
+    const model = catalogModel('platform-general-base-price')
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+
+    await act(async () => {
+      root.render(
+        <I18nextProvider i18n={i18n}>
+          <ModelCatalogDetailsDrawer
+            model={model}
+            onOpenChange={() => {}}
+            tokenUnit='M'
+            priceRate={1}
+            usdExchangeRate={1}
+          />
+        </I18nextProvider>
+      )
+    })
+
+    const text = normalizedText(document.body.textContent)
+    assert.equal(text.includes('Multiplier'), false)
+    assert.equal(text.includes(`${model.pricing?.model_ratio}×`), false)
+
+    await act(async () => root.unmount())
+    container.remove()
   })
 
   test('invokes onDetails when the details button is activated', async () => {

@@ -886,7 +886,7 @@ type OpenAIResponsesRequest struct {
 	// perplexity
 	Preset json.RawMessage `json:"preset,omitempty"`
 	// OpenRouter provider routing policy. User-supplied values are rejected and
-	// the adapter overwrites this field with the server-owned privacy policy.
+	// the adapter merges server-owned routing and privacy policy into this field.
 	Provider json.RawMessage `json:"provider,omitempty"`
 }
 

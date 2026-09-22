@@ -25,20 +25,25 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $NginxImage = 'nginx:1.27-alpine'
+    [string] $NginxImage = 'nginx:1.27-alpine',
+    [string] $RepoRoot,
+    [string] $ConfigRoot,
+    [string] $EvidencePath
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '_common.ps1')
+. (Join-Path $PSScriptRoot '_nginx-evidence.ps1')
 
-$root = Get-RepoRoot
-$nginxDir = Join-Path $root 'deploy/nginx'
+$root = Get-RepoRoot -Root $RepoRoot
+$nginxDir = if ($ConfigRoot) { Resolve-NginxConfigRoot -ConfigRoot $ConfigRoot } else { Join-Path $root 'deploy/nginx' }
+$evidence = if ($EvidencePath) { $EvidencePath } else { Join-Path $root '.platform-tmp/nginx-verified.stamp' }
 
-foreach ($required in @('nginx.conf', 'conf.d/gateway.conf')) {
-    $p = Join-Path $nginxDir $required
-    if (-not (Test-Path -LiteralPath $p)) { throw "Missing nginx config: $p" }
-}
+# Fail closed: an unsuccessful re-verification must not leave an older result
+# looking like evidence for this attempt.
+if (Test-Path -LiteralPath $evidence) { Remove-Item -LiteralPath $evidence -Force }
+$before = Get-NginxConfigFingerprint -ConfigRoot $nginxDir
 
 Assert-DockerEngine
 
@@ -90,10 +95,17 @@ try {
         throw "nginx -t FAILED (exit $code). Fix the configuration; do not weaken it to pass."
     }
 
+    $after = Get-NginxConfigFingerprint -ConfigRoot $nginxDir
+    if ($before.Fingerprint -ne $after.Fingerprint) {
+        throw 'nginx configuration changed during verification; no evidence was written. Run verification again.'
+    }
+    Write-NginxVerificationEvidence -Evidence (New-NginxVerificationEvidence -Fingerprint $after -NginxImage $NginxImage) -EvidencePath $evidence
+
     Write-Host ""
     Write-Host "nginx configuration syntax OK." -ForegroundColor Green
     Write-Host "  validated: deploy/nginx/nginx.conf" -ForegroundColor DarkGray
     Write-Host "  validated: deploy/nginx/conf.d/*.conf" -ForegroundColor DarkGray
+    Write-Host "  evidence: $evidence" -ForegroundColor DarkGray
     Write-Host "  note: syntax only. It does not prove TLS, DNS or upstream reachability." -ForegroundColor DarkGray
 } finally {
     Remove-Item -LiteralPath $certDir -Recurse -Force -ErrorAction SilentlyContinue

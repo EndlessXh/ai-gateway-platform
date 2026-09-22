@@ -101,9 +101,6 @@ function ModelOverview(props: {
                 )
               : t('Pricing unavailable')}
           </CatalogValue>
-          <CatalogValue label={t('Multiplier')}>
-            {priced ? `${priced.model_ratio}×` : '—'}
-          </CatalogValue>
           <CatalogValue label={t('Type')}>
             {priced?.quota_type === 1
               ? t('Per request')

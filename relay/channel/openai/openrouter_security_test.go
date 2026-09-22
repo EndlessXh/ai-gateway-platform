@@ -76,21 +76,23 @@ func TestOpenRouterRequestURLUsesSingleV1Segment(t *testing.T) {
 	}
 }
 
-func TestOpenRouterAdapterOverwritesProviderPolicy(t *testing.T) {
+func TestOpenRouterAdapterEnforcesCostFirstProviderPolicy(t *testing.T) {
 	c, _ := openRouterTestContext(t, "/v1/chat/completions")
 	info := openRouterTestInfo(types.RelayFormatOpenAI, relayconstant.RelayModeChatCompletions)
-	request := &dto.GeneralOpenAIRequest{Provider: common.StringToByteSlice(`{"order":["untrusted"]}`)}
+	request := &dto.GeneralOpenAIRequest{Provider: common.StringToByteSlice(`{"order":["untrusted"],"sort":"throughput","allow_fallbacks":false,"max_price":{"prompt":1}}`)}
 
 	converted, err := (&Adaptor{}).ConvertOpenAIRequest(c, info, request)
 	require.NoError(t, err)
 	chat := converted.(*dto.GeneralOpenAIRequest)
-	assertProviderPrivacyPolicy(t, chat.Provider)
+	assertProviderCostFirstPolicy(t, chat.Provider)
+	assertProviderKeepsMaxPrice(t, chat.Provider)
 
 	responses, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(c, info, dto.OpenAIResponsesRequest{
-		Provider: common.StringToByteSlice(`{"order":["untrusted"]}`),
+		Provider: common.StringToByteSlice(`{"order":["untrusted"],"sort":"throughput","allow_fallbacks":false,"max_price":{"prompt":1}}`),
 	})
 	require.NoError(t, err)
-	assertProviderPrivacyPolicy(t, responses.(dto.OpenAIResponsesRequest).Provider)
+	assertProviderCostFirstPolicy(t, responses.(dto.OpenAIResponsesRequest).Provider)
+	assertProviderKeepsMaxPrice(t, responses.(dto.OpenAIResponsesRequest).Provider)
 }
 
 func TestOpenRouterAdapterAllowsDataRetentionWhenChannelOptsIn(t *testing.T) {
@@ -163,6 +165,8 @@ func assertProviderPrivacyPolicy(t *testing.T, raw []byte) {
 	assert.Equal(t, "deny", provider["data_collection"])
 	assert.Equal(t, true, provider["zdr"])
 	assert.Equal(t, true, provider["require_parameters"])
+	assert.Equal(t, "price", provider["sort"])
+	assert.Equal(t, true, provider["allow_fallbacks"])
 	assert.NotContains(t, provider, "order")
 }
 
@@ -173,7 +177,50 @@ func assertProviderAllowsDataRetention(t *testing.T, raw []byte) {
 	assert.NotContains(t, provider, "data_collection")
 	assert.NotContains(t, provider, "zdr")
 	assert.Equal(t, true, provider["require_parameters"])
+	assert.Equal(t, "price", provider["sort"])
+	assert.Equal(t, true, provider["allow_fallbacks"])
 	assert.NotContains(t, provider, "order")
+}
+
+func assertProviderCostFirstPolicy(t *testing.T, raw []byte) {
+	t.Helper()
+	var provider map[string]any
+	require.NoError(t, common.Unmarshal(raw, &provider))
+	assert.Equal(t, "price", provider["sort"])
+	assert.Equal(t, true, provider["allow_fallbacks"])
+	assert.Equal(t, true, provider["require_parameters"])
+	assert.Equal(t, "deny", provider["data_collection"])
+	assert.Equal(t, true, provider["zdr"])
+	assert.NotContains(t, provider, "order")
+	assert.NotContains(t, provider, "only")
+	assert.NotContains(t, provider, "ignore")
+}
+
+func assertProviderKeepsMaxPrice(t *testing.T, raw []byte) {
+	t.Helper()
+	var provider map[string]any
+	require.NoError(t, common.Unmarshal(raw, &provider))
+	assert.Equal(t, map[string]any{"prompt": float64(1)}, provider["max_price"])
+}
+
+func TestOpenRouterAdapterCreatesProviderPolicyWhenAbsent(t *testing.T) {
+	c, _ := openRouterTestContext(t, "/v1/chat/completions")
+	info := openRouterTestInfo(types.RelayFormatOpenAI, relayconstant.RelayModeChatCompletions)
+
+	converted, err := (&Adaptor{}).ConvertOpenAIRequest(c, info, &dto.GeneralOpenAIRequest{})
+	require.NoError(t, err)
+	assertProviderCostFirstPolicy(t, converted.(*dto.GeneralOpenAIRequest).Provider)
+}
+
+func TestNonOpenRouterAdapterLeavesProviderPolicyUntouched(t *testing.T) {
+	c, _ := openRouterTestContext(t, "/v1/chat/completions")
+	info := openRouterTestInfo(types.RelayFormatOpenAI, relayconstant.RelayModeChatCompletions)
+	info.ChannelType = constant.ChannelTypeOpenAI
+	request := &dto.GeneralOpenAIRequest{Provider: common.StringToByteSlice(`{"sort":"throughput","allow_fallbacks":false}`)}
+
+	converted, err := (&Adaptor{}).ConvertOpenAIRequest(c, info, request)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"sort":"throughput","allow_fallbacks":false}`, string(converted.(*dto.GeneralOpenAIRequest).Provider))
 }
 
 func TestOpenRouterChatResponsesHideUpstreamIdentity(t *testing.T) {
