@@ -13,6 +13,49 @@ function Run-Preflight {
     $out = & pwsh -NoProfile -File (Join-Path $repo 'scripts/preflight-release.ps1') -Environment prod -RepoRoot $Root -ConfigRoot $ConfigRoot -EvidencePath $EvidencePath 2>&1 | Out-String
     return [pscustomobject]@{ Code = $LASTEXITCODE; Output = $out }
 }
+function Write-MockDocker {
+    param([string] $Directory)
+@'
+@echo off
+if /I "%~1"=="info" (
+  echo 27.0.0
+  exit /b 0
+)
+exit /b 0
+'@ | Set-Content -LiteralPath (Join-Path $Directory 'docker.cmd') -NoNewline
+}
+function Write-MockOpenSsl {
+    param([string] $Directory)
+    @'
+@echo off
+setlocal EnableDelayedExpansion
+set "key=" & set "cert="
+:next
+if "%~1"=="" goto done
+if /I "%~1"=="-keyout" (set "key=%~2" & shift & shift & goto next)
+if /I "%~1"=="-out" (set "cert=%~2" & shift & shift & goto next)
+shift
+goto next
+:done
+if "%key%"=="" exit /b 2
+if "%cert%"=="" exit /b 2
+> "%key%" echo disposable key
+> "%cert%" echo disposable certificate
+exit /b 0
+'@ | Set-Content -LiteralPath (Join-Path $Directory 'openssl.cmd') -NoNewline
+}
+function Run-Verify {
+    param([string] $Root, [string] $ConfigRoot, [string] $EvidencePath, [string] $ToolPath, [string] $CertTemp)
+    $oldPath = $env:PATH; $oldTemp = $env:TEMP; $oldTmp = $env:TMP
+    try {
+        $env:PATH = $ToolPath
+        $env:TEMP = $CertTemp; $env:TMP = $CertTemp
+        $out = & (Get-Process -Id $PID).Path -NoProfile -File (Join-Path $repo 'scripts/verify-nginx.ps1') -RepoRoot $Root -ConfigRoot $ConfigRoot -EvidencePath $EvidencePath 2>&1 | Out-String
+        return [pscustomobject]@{ Code = $LASTEXITCODE; Output = $out }
+    } finally {
+        $env:PATH = $oldPath; $env:TEMP = $oldTemp; $env:TMP = $oldTmp
+    }
+}
 function Write-TestEnv { param([string] $Path) @'
 SOURCE_CODE_URL=https://source.invalid/project
 PRICING_STATUS=approved
@@ -69,6 +112,20 @@ http { include /etc/nginx/conf.d/*.conf; }
     '' | Set-Content -LiteralPath $evidence -NoNewline
     $result = Run-Preflight $root $config $evidence
     Assert-That ($result.Code -ne 0 -and $result.Output -match 'evidence invalid') 'empty evidence must fail'
+
+    $tools = Join-Path $root 'mock-tools'; $certTemp = Join-Path $root 'cert-temp'
+    New-Item -ItemType Directory -Force -Path $tools, $certTemp | Out-Null
+    Write-MockDocker -Directory $tools
+    Write-MockOpenSsl -Directory $tools
+    $result = Run-Verify $root $config $evidence $tools $certTemp
+    Assert-That ($result.Code -eq 0 -and (Test-Path -LiteralPath $evidence)) 'disposable certificate generation and verification must succeed'
+    Assert-That (-not (Get-ChildItem -LiteralPath $certTemp -Filter 'aigw-nginx-verify-*' -ErrorAction SilentlyContinue)) 'disposable certificate directory must be cleaned'
+
+    Remove-Item -LiteralPath $evidence -Force
+    Remove-Item -LiteralPath (Join-Path $tools 'openssl.cmd') -Force
+    $result = Run-Verify $root $config $evidence $tools $certTemp
+    Assert-That ($result.Code -ne 0 -and $result.Output -match "Required executable 'openssl' was not found") 'missing openssl must fail clearly without evidence'
+    Assert-That (-not (Test-Path -LiteralPath $evidence)) 'missing openssl must not write evidence'
 
     $fingerprint = Get-NginxConfigFingerprint -ConfigRoot $config
     Write-NginxVerificationEvidence -Evidence (New-NginxVerificationEvidence -Fingerprint $fingerprint -NginxImage 'nginx:test') -EvidencePath $evidence

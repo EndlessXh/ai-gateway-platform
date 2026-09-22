@@ -70,15 +70,19 @@ UNVERIFIED until that job passes.
 }
 
 # Throwaway certificate material, outside the repository.
+$openssl = Get-Command openssl -CommandType Application -ErrorAction SilentlyContinue
+if (-not $openssl) {
+    throw "Required executable 'openssl' was not found on PATH. It is needed only to generate a disposable certificate for nginx syntax verification; install or expose openssl before retrying."
+}
 $certDir = Join-Path ([System.IO.Path]::GetTempPath()) "aigw-nginx-verify-$(Get-Random)"
 New-Item -ItemType Directory -Force -Path $certDir | Out-Null
 
 try {
     Write-Host "Generating throwaway certificate for syntax check..." -ForegroundColor DarkGray
-    # Generated inside the same container image, so no host openssl is needed
-    # and Git Bash cannot mangle the -subj argument into a Windows path.
-    & docker run --rm --network none -v "${certDir}:/certs" $NginxImage `
-        sh -c "openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout /certs/privkey.pem -out /certs/fullchain.pem -subj '/CN=gateway.example.invalid' 2>/dev/null"
+    & $openssl.Source req -x509 -newkey rsa:2048 -nodes -days 1 `
+        -keyout (Join-Path $certDir 'privkey.pem') `
+        -out (Join-Path $certDir 'fullchain.pem') `
+        -subj '/CN=gateway.example.invalid'
     if ($LASTEXITCODE -ne 0) { throw "Could not generate test certificate (exit $LASTEXITCODE)" }
 
     Write-Host "Running nginx -t against the real configuration..." -ForegroundColor Cyan
